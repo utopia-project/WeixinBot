@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# coding: utf-8
+# encoding: utf-8
 import qrcode
 import urllib
 import urllib2
@@ -24,6 +24,7 @@ from lxml import html
 # for media upload
 import mimetypes
 from requests_toolbelt.multipart.encoder import MultipartEncoder
+from os.path import expanduser
 
 
 def catchKeyboardInterrupt(fn):
@@ -117,7 +118,9 @@ class WebWeixin(object):
         self.TimeOut = 20  # 同步最短时间间隔（单位：秒）
         self.media_count = -1
 
-        self.cookie = cookielib.CookieJar()
+        self.home = expanduser("~")
+        self.cookieFile = os.path.join(self.home, 'weixin_cookie.txt')
+        self.cookie = cookielib.MozillaCookieJar(self.cookieFile)
         opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(self.cookie))
         opener.addheaders = [('User-agent', self.user_agent)]
         urllib2.install_opener(opener)
@@ -926,6 +929,28 @@ class WebWeixin(object):
         user_id = self.getUSerID(name)
         response = self.webwxsendmsgemotion(user_id, media_id)
 
+    def _saveArgs(self):
+        argsFile = os.path.join(self.home, 'weixin_args.json')
+        args = {}
+        args['base_uri'] = self.base_uri
+        args['sid'] = self.sid
+        args['uin'] = self.uin
+        args['skey'] = self.skey
+        args['pass_ticket'] = self.pass_ticket
+        args['deviceId'] = self.deviceId
+        args['synckey'] = self.synckey
+        args['SyncKey'] = self.SyncKey
+        args['User'] = self.User
+        args['MemberList'] = self.MemberList
+        args['ContactList'] = self.ContactList
+        args['GroupList'] = self.GroupList
+        args['GroupMemeberList'] = self.GroupMemeberList
+        args['PublicUsersList'] = self.PublicUsersList
+        args['SpecialUsersList'] = self.SpecialUsersList
+        with open(argsFile, 'w') as fp:
+            fp.write(json.dumps(args))
+        return argsFile
+
     @catchKeyboardInterrupt
     def start(self):
         self._echo('[*] 微信网页版 ... 开动')
@@ -961,50 +986,10 @@ class WebWeixin(object):
             print self
         logging.debug(self)
 
-        if self.interactive and raw_input('[*] 是否开启自动回复模式(y/n): ') == 'y':
-            self.autoReplyMode = True
-            print '[*] 自动回复模式 ... 开启'
-            logging.debug('[*] 自动回复模式 ... 开启')
-        else:
-            print '[*] 自动回复模式 ... 关闭'
-            logging.debug('[*] 自动回复模式 ... 关闭')
-
-        if sys.platform.startswith('win'):
-            import thread
-            thread.start_new_thread(self.listenMsgMode())
-        else:
-            listenProcess = multiprocessing.Process(target=self.listenMsgMode)
-            listenProcess.start()
-
-        while True:
-            text = raw_input('')
-            if text == 'quit':
-                listenProcess.terminate()
-                print('[*] 退出微信')
-                logging.debug('[*] 退出微信')
-                exit()
-            elif text[:2] == '->':
-                [name, word] = text[2:].split(':')
-                if name == 'all':
-                    self.sendMsgToAll(word)
-                else:
-                    self.sendMsg(name, word)
-            elif text[:3] == 'm->':
-                [name, file] = text[3:].split(':')
-                self.sendMsg(name, file, True)
-            elif text[:3] == 'f->':
-                print '发送文件'
-                logging.debug('发送文件')
-            elif text[:3] == 'i->':
-                print '发送图片'
-                [name, file_name] = text[3:].split(':')
-                self.sendImg(name, file_name)
-                logging.debug('发送图片')
-            elif text[:3] == 'e->':
-                print '发送表情'
-                [name, file_name] = text[3:].split(':')
-                self.sendEmotion(name, file_name)
-                logging.debug('发送表情')
+        self.cookie.save(ignore_discard=True, ignore_expires=True)
+        argsFile = self._saveArgs()
+        cmd = "/usr/bin/python weixin_listener.py -args %s -cookie %s" % (argsFile, self.cookieFile)
+        os.system(cmd)
 
     def _safe_open(self, path):
         if self.autoOpen:

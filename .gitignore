@@ -94,3 +94,6 @@ ENV/
 .idea
 
 *.pyc
+
+saved
+msg*
